@@ -22,7 +22,7 @@ type Connection struct {
 
 type Event struct {
 	data      map[string]interface{}
-	eventType string
+	EventType string
 	rawText   string
 	userId    string
 	trigger   *Trigger
@@ -33,15 +33,21 @@ type Trigger struct {
 	args    []string
 }
 
-type Member struct {
+type SlackUser struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
 }
 
 type UsersListResponseData struct {
-	Ok      bool     `json:"ok"`
-	Error   string   `json:"error"`
-	Members []Member `json:"members"`
+	Ok    bool        `json:"ok"`
+	Error string      `json:"error"`
+	Users []SlackUser `json:"members"`
+}
+
+type UsersInfoResponseData struct {
+	Ok    bool      `json:"ok"`
+	Error string    `json:"error"`
+	User  SlackUser `json:"user"`
 }
 
 type RtmStartResponseData struct {
@@ -64,16 +70,20 @@ func NewConnection(token string) *Connection {
 func createEvent(data map[string]interface{}) *Event {
 	e := &Event{
 		data:      data,
-		eventType: data["type"].(string),
+		EventType: data["type"].(string),
 	}
 
-	if e.eventType == "message" {
+	if userId, ok := data["user"]; ok {
+		e.userId = userId.(string)
+	}
+
+	if e.EventType == "message" {
 		e.rawText = data["text"].(string)
-		e.userId = data["user"].(string)
 
 		args := strings.Split(strings.TrimSpace(e.rawText), " ")
-		log.Printf(args[1])
-		e.trigger = createTrigger(args[1], args[2:])
+		if len(args) > 1 {
+			e.trigger = createTrigger(args[1], args[2:])
+		}
 	}
 
 	return e
@@ -86,7 +96,7 @@ func createTrigger(keyword string, args []string) *Trigger {
 	}
 }
 
-func (conn *Connection) Loop() {
+func (conn *Connection) Run() {
 	ws, err := conn.Start()
 	if err != nil {
 		log.Fatal(err)
@@ -95,18 +105,24 @@ func (conn *Connection) Loop() {
 	for {
 		var data map[string]interface{}
 		websocket.JSON.Receive(ws, &data)
-		fmt.Printf("%v\n", data)
-		fmt.Println(conn.BotUserId)
+		fmt.Printf("%+v\n", data)
 
-		if eventType, ok := data["type"].(string); ok && eventType == "message" {
+		e := createEvent(data)
+
+		switch data["type"].(string) {
+		case "message":
 			var isMention = strings.HasPrefix(data["text"].(string), "<@"+conn.userId+">")
 			if !isMention {
 				// ignore if bot's name not mentioned for now
 				continue
 			}
 
-			e := createEvent(data)
 			if callback, ok := conn.reactions[e.Trigger().Keyword()]; ok {
+				callback(e)
+			}
+		case "presence_change":
+			presenceType := data["presence"].(string)
+			if callback, ok := conn.reactions[presenceType]; ok {
 				callback(e)
 			}
 		}
@@ -125,8 +141,6 @@ func (conn *Connection) Start() (*websocket.Conn, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Printf("%v\n", resData)
 
 	conn.userId = resData.Self.Id
 	conn.userName = resData.Self.Name
@@ -158,6 +172,27 @@ func (conn *Connection) GetUsersList() UsersListResponseData {
 	}
 
 	var resData UsersListResponseData
+	err = json.NewDecoder(res.Body).Decode(&resData)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	return resData
+}
+
+func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData {
+	res, err := http.PostForm("https://slack.com/api/users.info", url.Values{
+		"token":   {conn.token},
+		"user":    {userId},
+		"as_user": {"true"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var resData UsersInfoResponseData
+
 	err = json.NewDecoder(res.Body).Decode(&resData)
 	if err != nil {
 		log.Fatal(err)
