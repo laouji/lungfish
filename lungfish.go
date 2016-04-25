@@ -86,8 +86,8 @@ func createTrigger(keyword string, args []string) *Trigger {
 	}
 }
 
-func (con *Connection) Loop() {
-	ws, err := con.Start()
+func (conn *Connection) Loop() {
+	ws, err := conn.Start()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,25 +96,25 @@ func (con *Connection) Loop() {
 		var data map[string]interface{}
 		websocket.JSON.Receive(ws, &data)
 		fmt.Printf("%v\n", data)
-		fmt.Println(con.BotUserId)
+		fmt.Println(conn.BotUserId)
 
 		if eventType, ok := data["type"].(string); ok && eventType == "message" {
-			var isMention = strings.HasPrefix(data["text"].(string), "<@"+con.userId+">")
+			var isMention = strings.HasPrefix(data["text"].(string), "<@"+conn.userId+">")
 			if !isMention {
 				// ignore if bot's name not mentioned for now
 				continue
 			}
 
 			e := createEvent(data)
-			if callback, ok := con.reactions[e.Trigger().Keyword()]; ok {
+			if callback, ok := conn.reactions[e.Trigger().Keyword()]; ok {
 				callback(e)
 			}
 		}
 	}
 }
 
-func (con *Connection) Start() (*websocket.Conn, error) {
-	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {con.token}})
+func (conn *Connection) Start() (*websocket.Conn, error) {
+	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {conn.token}})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -128,16 +128,16 @@ func (con *Connection) Start() (*websocket.Conn, error) {
 
 	fmt.Printf("%v\n", resData)
 
-	con.userId = resData.Self.Id
-	con.userName = resData.Self.Name
+	conn.userId = resData.Self.Id
+	conn.userName = resData.Self.Name
 
 	return websocket.Dial(resData.Url, "", "https://slack.com")
 }
 
-func (con *Connection) PostMessage(text string) {
+func (conn *Connection) PostMessage(text string) {
 	res, err := http.PostForm("https://slack.com/api/chat.postMessage", url.Values{
-		"token":   {con.token},
-		"channel": {con.channel},
+		"token":   {conn.token},
+		"channel": {conn.channel},
 		"text":    {text},
 		"as_user": {"true"},
 	})
@@ -147,10 +147,10 @@ func (con *Connection) PostMessage(text string) {
 	defer res.Body.Close()
 }
 
-func (con *Connection) GetUsersList() UsersListResponseData {
+func (conn *Connection) GetUsersList() UsersListResponseData {
 	res, err := http.PostForm("https://slack.com/api/users.list", url.Values{
-		"token":   {con.token},
-		"channel": {con.channel},
+		"token":   {conn.token},
+		"channel": {conn.channel},
 		"as_user": {"true"},
 	})
 	if err != nil {
@@ -167,16 +167,16 @@ func (con *Connection) GetUsersList() UsersListResponseData {
 	return resData
 }
 
-func (con *Connection) RegisterChannel(channel string) {
-	con.channel = channel
+func (conn *Connection) RegisterChannel(channel string) {
+	conn.channel = channel
 }
 
-func (con *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
-	con.reactions[triggerWord] = callback
+func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
+	conn.reactions[triggerWord] = callback
 }
 
-func (con *Connection) BotUserId() string {
-	return con.userId
+func (conn *Connection) BotUserId() string {
+	return conn.userId
 }
 
 func (e *Event) Text() string {
