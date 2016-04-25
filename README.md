@@ -48,7 +48,7 @@ conn.RegisterReaction("hello", func(e *lungfish.Event) {
 
 Here are some built-in API calls that come in handy in callbacks:
 
-##### func (conn *Connection) PostMessage(text string)
+#### func (conn *Connection) PostMessage(text string)
 
 Post a message to the registered channel:
 
@@ -56,7 +56,7 @@ Post a message to the registered channel:
 conn.PostMessage("hello world")
 ```
 
-##### func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData
+#### func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData
 
 Get information about the user from a user ID via https://api.slack.com/methods/users.info
 
@@ -70,7 +70,7 @@ if !userInfo.Ok {
 }
 ```
 
-##### func (conn *Connection) GetUsersList() UsersListResponseData
+#### func (conn *Connection) GetUsersList() UsersListResponseData
 
 Get information about all users in the registered channel via https://api.slack.com/methods/users.list
 
