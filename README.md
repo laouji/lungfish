@@ -42,6 +42,8 @@ conn.RegisterReaction("hello", func(e *lungfish.Event) {
 })
 ```
 
+<img width="254" alt="51e4de98" src="https://cloud.githubusercontent.com/assets/2435916/14772595/23a2ff8a-0adb-11e6-8428-3c2467ff9669.png">
+
 ## INSTALLATION
 
 ```
