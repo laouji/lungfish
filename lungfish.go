@@ -22,7 +22,7 @@ type Connection struct {
 
 type Event struct {
 	data      map[string]interface{}
-	eventType string
+	EventType string
 	rawText   string
 	userId    string
 	trigger   *Trigger
@@ -33,15 +33,32 @@ type Trigger struct {
 	args    []string
 }
 
-type Member struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
+type SlackUserProfile struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	RealName  string `json:"real_name"`
+	Email     string `json:"email"`
+	Image24   string `json:"image_24"`
+}
+
+type SlackUser struct {
+	Id      string           `json:"id"`
+	Name    string           `json:"name"`
+	IsAdmin bool             `json:"is_admin"`
+	IsOwner bool             `json:"is_owner"`
+	Profile SlackUserProfile `json:"profile"`
 }
 
 type UsersListResponseData struct {
-	Ok      bool     `json:"ok"`
-	Error   string   `json:"error"`
-	Members []Member `json:"members"`
+	Ok    bool        `json:"ok"`
+	Error string      `json:"error"`
+	Users []SlackUser `json:"members"`
+}
+
+type UsersInfoResponseData struct {
+	Ok    bool      `json:"ok"`
+	Error string    `json:"error"`
+	User  SlackUser `json:"user"`
 }
 
 type RtmStartResponseData struct {
@@ -64,16 +81,20 @@ func NewConnection(token string) *Connection {
 func createEvent(data map[string]interface{}) *Event {
 	e := &Event{
 		data:      data,
-		eventType: data["type"].(string),
+		EventType: data["type"].(string),
 	}
 
-	if e.eventType == "message" {
+	if userId, ok := data["user"]; ok {
+		e.userId = userId.(string)
+	}
+
+	if e.EventType == "message" {
 		e.rawText = data["text"].(string)
-		e.userId = data["user"].(string)
 
 		args := strings.Split(strings.TrimSpace(e.rawText), " ")
-		log.Printf(args[1])
-		e.trigger = createTrigger(args[1], args[2:])
+		if len(args) > 1 {
+			e.trigger = createTrigger(args[1], args[2:])
+		}
 	}
 
 	return e
@@ -86,8 +107,8 @@ func createTrigger(keyword string, args []string) *Trigger {
 	}
 }
 
-func (con *Connection) Loop() {
-	ws, err := con.Start()
+func (conn *Connection) Run() {
+	ws, err := conn.Start()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,26 +116,32 @@ func (con *Connection) Loop() {
 	for {
 		var data map[string]interface{}
 		websocket.JSON.Receive(ws, &data)
-		fmt.Printf("%v\n", data)
-		fmt.Println(con.BotUserId)
+		fmt.Printf("%+v\n", data)
 
-		if eventType, ok := data["type"].(string); ok && eventType == "message" {
-			var isMention = strings.HasPrefix(data["text"].(string), "<@"+con.userId+">")
+		e := createEvent(data)
+
+		switch data["type"].(string) {
+		case "message":
+			var isMention = strings.HasPrefix(data["text"].(string), "<@"+conn.userId+">")
 			if !isMention {
 				// ignore if bot's name not mentioned for now
 				continue
 			}
 
-			e := createEvent(data)
-			if callback, ok := con.reactions[e.Trigger().Keyword()]; ok {
+			if callback, ok := conn.reactions[e.Trigger().Keyword()]; ok {
+				callback(e)
+			}
+		case "presence_change":
+			presenceType := data["presence"].(string)
+			if callback, ok := conn.reactions[presenceType]; ok {
 				callback(e)
 			}
 		}
 	}
 }
 
-func (con *Connection) Start() (*websocket.Conn, error) {
-	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {con.token}})
+func (conn *Connection) Start() (*websocket.Conn, error) {
+	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {conn.token}})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -126,18 +153,16 @@ func (con *Connection) Start() (*websocket.Conn, error) {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%v\n", resData)
-
-	con.userId = resData.Self.Id
-	con.userName = resData.Self.Name
+	conn.userId = resData.Self.Id
+	conn.userName = resData.Self.Name
 
 	return websocket.Dial(resData.Url, "", "https://slack.com")
 }
 
-func (con *Connection) PostMessage(text string) {
+func (conn *Connection) PostMessage(text string) {
 	res, err := http.PostForm("https://slack.com/api/chat.postMessage", url.Values{
-		"token":   {con.token},
-		"channel": {con.channel},
+		"token":   {conn.token},
+		"channel": {conn.channel},
 		"text":    {text},
 		"as_user": {"true"},
 	})
@@ -147,10 +172,10 @@ func (con *Connection) PostMessage(text string) {
 	defer res.Body.Close()
 }
 
-func (con *Connection) GetUsersList() UsersListResponseData {
+func (conn *Connection) GetUsersList() UsersListResponseData {
 	res, err := http.PostForm("https://slack.com/api/users.list", url.Values{
-		"token":   {con.token},
-		"channel": {con.channel},
+		"token":   {conn.token},
+		"channel": {conn.channel},
 		"as_user": {"true"},
 	})
 	if err != nil {
@@ -167,16 +192,37 @@ func (con *Connection) GetUsersList() UsersListResponseData {
 	return resData
 }
 
-func (con *Connection) RegisterChannel(channel string) {
-	con.channel = channel
+func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData {
+	res, err := http.PostForm("https://slack.com/api/users.info", url.Values{
+		"token":   {conn.token},
+		"user":    {userId},
+		"as_user": {"true"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var resData UsersInfoResponseData
+
+	err = json.NewDecoder(res.Body).Decode(&resData)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	return resData
 }
 
-func (con *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
-	con.reactions[triggerWord] = callback
+func (conn *Connection) RegisterChannel(channel string) {
+	conn.channel = channel
 }
 
-func (con *Connection) BotUserId() string {
-	return con.userId
+func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
+	conn.reactions[triggerWord] = callback
+}
+
+func (conn *Connection) OwnUserId() string {
+	return conn.userId
 }
 
 func (e *Event) Text() string {

@@ -20,16 +20,14 @@ func main() {
 
 	conn.RegisterChannel(*channel)
 	conn.RegisterReaction("hello", func(e *lungfish.Event) {
-		usersList := conn.GetUsersList()
-		var memberName string
-		for i := 0; i < len(usersList.Members); i++ {
-			if usersList.Members[i].Id == e.UserId() {
-				memberName = "@" + usersList.Members[i].Name
-				break
-			}
+		userInfo := conn.GetUserInfo(e.UserId())
+		if !userInfo.Ok {
+			log.Println(e.EventType + ": " + userInfo.Error)
+			conn.PostMessage("error: " + userInfo.Error)
+		} else {
+			conn.PostMessage("o hai @" + userInfo.User.Name)
 		}
-		conn.PostMessage("o hai " + memberName)
 	})
 
-	conn.Loop()
+	conn.Run()
 }

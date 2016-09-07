@@ -2,20 +2,31 @@ package lungfish
 
 import "testing"
 
+func TestNewConnection(t *testing.T) {
+	conn := NewConnection("dummytoken")
+
+	if conn.token != "dummytoken" {
+		t.Fatalf("expected: dummytoken, got: %s", conn.token)
+	}
+}
+
 func TestCreateEvent(t *testing.T) {
-	data := make(map[string]interface{})
-	data["text"] = "@lungfish blahblah extra args"
-	data["type"] = "message"
-	data["user"] = "me"
-
+	data := map[string]interface{}{
+		"type": "message",
+		"user": "aaaaaa",
+		"text": "@botname: command_name arg1 arg2",
+	}
 	e := createEvent(data)
-
-	if e.eventType != data["type"] {
-		t.Fatalf("expected: %s, got: %s", data["type"], e.eventType)
+	if e.rawText != data["text"] {
+		t.Fatalf("expected: %s, got: %s", data["text"], e.rawText)
 	}
 
-	if e.trigger.keyword != "blahblah" {
-		t.Fatalf("expected: %s, got: %s", "blahblah", e.trigger.keyword)
+	if e.EventType != data["type"] {
+		t.Fatalf("expected: %s, got: %s", data["type"], e.EventType)
+	}
+
+	if e.trigger.keyword != "command_name" {
+		t.Fatalf("expected: %s, got: %s", "command_name", e.trigger.keyword)
 	}
 
 	if len(e.trigger.args) != 2 {
@@ -23,20 +34,20 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
-func TestRegisterReaction(t *testing.T) {
-	c := &Connection{
-		token:     "token",
-		userId:    "abcde",
-		userName:  "Florence",
-		channel:   "#fatm",
-		reactions: map[string]callbackMethod{},
+func TestRegisterChannel(t *testing.T) {
+	conn := NewConnection("dummytoken")
+	conn.RegisterChannel("#general")
+	if conn.channel != "#general" {
+		t.Fatalf("expected: #general, got: %s", conn.channel)
 	}
+}
 
-	trigger := "ping"
-	callback := func(e *Event) {}
-	c.RegisterReaction(trigger, callback)
+func TestRegisterReaction(t *testing.T) {
+	trigger := "hello"
+	conn := NewConnection("dummytoken")
+	conn.RegisterReaction(trigger, func(e *Event) { return })
 
-	if _, ok := c.reactions[trigger]; !ok {
+	if _, ok := conn.reactions["hello"]; !ok {
 		t.Fatalf("expected key named %s to be set in c.reactions", trigger)
 	}
 }
