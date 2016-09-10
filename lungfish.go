@@ -107,17 +107,54 @@ func createTrigger(keyword string, args []string) *Trigger {
 	}
 }
 
+func (conn *Connection) Start() (*websocket.Conn, error) {
+	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {conn.token}})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	var resData RtmStartResponseData
+	err = json.NewDecoder(res.Body).Decode(&resData)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conn.userId = resData.Self.Id
+	conn.userName = resData.Self.Name
+
+	return websocket.Dial(resData.Url, "", "https://slack.com")
+}
+
 func (conn *Connection) Run() {
 	ws, err := conn.Start()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for {
-		var data map[string]interface{}
-		websocket.JSON.Receive(ws, &data)
-		fmt.Printf("%+v\n", data)
+	conn.handleEvents(conn.receive(ws))
+}
 
+func (conn *Connection) receive(ws *websocket.Conn) <-chan map[string]interface{} {
+	ch := make(chan map[string]interface{})
+	go func() {
+		for {
+			var data map[string]interface{}
+			websocket.JSON.Receive(ws, &data)
+			fmt.Printf("%+v\n", data)
+			ch <- data
+		}
+	}()
+
+	return ch
+}
+
+func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
+	for {
+		data := <-ch
+		if data == nil {
+			continue
+		}
 		e := createEvent(data)
 
 		switch data["type"].(string) {
@@ -138,25 +175,6 @@ func (conn *Connection) Run() {
 			}
 		}
 	}
-}
-
-func (conn *Connection) Start() (*websocket.Conn, error) {
-	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {conn.token}})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
-
-	var resData RtmStartResponseData
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	conn.userId = resData.Self.Id
-	conn.userName = resData.Self.Name
-
-	return websocket.Dial(resData.Url, "", "https://slack.com")
 }
 
 func (conn *Connection) PostMessage(text string) {
