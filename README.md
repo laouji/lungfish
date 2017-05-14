@@ -28,7 +28,10 @@ func main() {
 
     // bot logic goes here
 
-	conn.Run()
+	err := conn.Run()
+  if err != nil {
+    // handle connection error
+  }
 }
 ```
 

@@ -2,8 +2,9 @@ package main
 
 import (
 	"flag"
-	"github.com/laouji/lungfish"
 	"log"
+
+	"github.com/laouji/lungfish"
 )
 
 var (
@@ -29,5 +30,8 @@ func main() {
 		}
 	})
 
-	conn.Run()
+	err := conn.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
 }

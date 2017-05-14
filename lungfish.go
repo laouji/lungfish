@@ -126,13 +126,14 @@ func (conn *Connection) Start() (*websocket.Conn, error) {
 	return websocket.Dial(resData.Url, "", "https://slack.com")
 }
 
-func (conn *Connection) Run() {
+func (conn *Connection) Run() error {
 	ws, err := conn.Start()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	conn.handleEvents(conn.receive(ws))
+	return nil
 }
 
 func (conn *Connection) receive(ws *websocket.Conn) <-chan map[string]interface{} {
