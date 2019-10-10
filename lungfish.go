@@ -3,29 +3,32 @@ package lungfish
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/websocket"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"golang.org/x/net/websocket"
 )
 
 type callbackMethod func(*Event)
 
 type Connection struct {
+	Channels map[string]SlackConversation
+
 	token     string
 	userId    string
 	userName  string
-	channel   string
 	reactions map[string]callbackMethod
 }
 
 type Event struct {
-	data      map[string]interface{}
-	EventType string
-	rawText   string
-	userId    string
-	trigger   *Trigger
+	data           map[string]interface{}
+	EventType      string
+	rawText        string
+	userId         string
+	conversationId string
+	trigger        *Trigger
 }
 
 type Trigger struct {
@@ -49,6 +52,16 @@ type SlackUser struct {
 	Profile SlackUserProfile `json:"profile"`
 }
 
+type SlackConversation struct {
+	Id    string     `json:"id"`
+	Name  string     `json:"name"`
+	Topic SlackTopic `json:"topic"`
+}
+
+type SlackTopic struct {
+	Value string `json:"value"`
+}
+
 type UsersListResponseData struct {
 	Ok    bool        `json:"ok"`
 	Error string      `json:"error"`
@@ -59,6 +72,18 @@ type UsersInfoResponseData struct {
 	Ok    bool      `json:"ok"`
 	Error string    `json:"error"`
 	User  SlackUser `json:"user"`
+}
+
+type ConversationsListResponseData struct {
+	Ok            bool                `json:"ok"`
+	Error         string              `json:"error"`
+	Conversations []SlackConversation `json:"channels"`
+}
+
+type ConversationJoinResponseData struct {
+	Ok           bool              `json:"ok"`
+	Error        string            `json:"error"`
+	Conversation SlackConversation `json:"channel"`
 }
 
 type RtmStartResponseData struct {
@@ -86,6 +111,10 @@ func createEvent(data map[string]interface{}) *Event {
 
 	if userId, ok := data["user"]; ok {
 		e.userId = userId.(string)
+	}
+
+	if conversationId, ok := data["channel"]; ok {
+		e.conversationId = conversationId.(string)
 	}
 
 	if e.EventType == "message" {
@@ -142,7 +171,7 @@ func (conn *Connection) receive(ws *websocket.Conn) <-chan map[string]interface{
 		for {
 			var data map[string]interface{}
 			websocket.JSON.Receive(ws, &data)
-			fmt.Printf("%+v\n", data)
+			log.Printf("received event %+v\n", data)
 			ch <- data
 		}
 	}()
@@ -159,13 +188,8 @@ func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
 		e := createEvent(data)
 
 		switch data["type"].(string) {
-		case "message":
-			var isMention = strings.HasPrefix(data["text"].(string), "<@"+conn.userId+">")
-			if !isMention {
-				// ignore if bot's name not mentioned for now
-				continue
-			}
-
+		case "app_mention":
+			log.Printf("received app mention %+v\n", e)
 			if callback, ok := conn.reactions[e.Trigger().Keyword()]; ok {
 				callback(e)
 			}
@@ -178,10 +202,10 @@ func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
 	}
 }
 
-func (conn *Connection) PostMessage(text string) {
+func (conn *Connection) PostMessage(text string, event *Event) {
 	res, err := http.PostForm("https://slack.com/api/chat.postMessage", url.Values{
 		"token":   {conn.token},
-		"channel": {conn.channel},
+		"channel": {event.conversationId},
 		"text":    {text},
 		"as_user": {"true"},
 	})
@@ -191,10 +215,10 @@ func (conn *Connection) PostMessage(text string) {
 	defer res.Body.Close()
 }
 
-func (conn *Connection) GetUsersList() UsersListResponseData {
+func (conn *Connection) GetUsersList(event *Event) UsersListResponseData {
 	res, err := http.PostForm("https://slack.com/api/users.list", url.Values{
 		"token":   {conn.token},
-		"channel": {conn.channel},
+		"channel": {event.conversationId},
 		"as_user": {"true"},
 	})
 	if err != nil {
@@ -232,8 +256,52 @@ func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData {
 	return resData
 }
 
-func (conn *Connection) RegisterChannel(channel string) {
-	conn.channel = channel
+func (conn *Connection) joinConversation(conversationId string) error {
+	res, err := http.PostForm("https://slack.com/api/conversations.join", url.Values{
+		"token":   {conn.token},
+		"channel": {conversationId},
+		"as_user": {"true"},
+	})
+	if err != nil {
+		return err
+	}
+
+	var resData ConversationJoinResponseData
+
+	err = json.NewDecoder(res.Body).Decode(&resData)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	id := resData.Conversation.Id
+	conn.Channels[id] = resData.Conversation
+	return nil
+}
+
+func (conn *Connection) JoinChannels() error {
+	res, err := http.Get("https://slack.com/api/conversations.list")
+	if err != nil {
+		return err
+	}
+
+	var resData ConversationsListResponseData
+
+	err = json.NewDecoder(res.Body).Decode(&resData)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	log.Printf("join channels %+v", resData)
+	if !resData.Ok {
+		return fmt.Errorf("could not fetch channels: %s", resData.Error)
+	}
+
+	for _, conversation := range resData.Conversations {
+		conn.joinConversation(conversation.Id)
+	}
+	return nil
 }
 
 func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
