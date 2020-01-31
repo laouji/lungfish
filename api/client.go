@@ -17,50 +17,60 @@ func NewClient(token string) *Client {
 	}
 }
 
-func (client *Client) Start() (resData RtmStartResponseData, err error) {
-	res, err := http.PostForm(baseUrl+endpointRtmStart, url.Values{
-		"token": {client.token},
-	})
+func (client *Client) postForm(
+	endpoint string,
+	payload url.Values,
+	responseData interface{},
+) error {
+	res, err := http.PostForm(endpoint, payload)
 	if err != nil {
-		return resData, fmt.Errorf("request to %s endpoint failed: %s", endpointRtmStart, err)
+		return fmt.Errorf("request to %s endpoint with payload %s failed: %s", endpoint, payload, err)
 	}
 	defer res.Body.Close()
 
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		return resData, fmt.Errorf("failed to decode rtm.start response body: %s", err)
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("request to %s endpoint with payload %s resulted in status code %d", endpoint, payload, res.StatusCode)
 	}
 
-	return resData, nil
+	// if the caller passed nil, we don't need to decode the response body
+	if responseData == nil {
+		return nil
+	}
+
+	err = json.NewDecoder(res.Body).Decode(responseData)
+	if err != nil {
+		return fmt.Errorf("failed to decode %s response body: %s", endpoint, err)
+	}
+	return nil
 }
 
-func (client *Client) GetUserInfo(userId string) (resData UsersInfoResponseData, err error) {
-	res, err := http.PostForm(baseUrl+endpointUsersInfo, url.Values{
+func (client *Client) Start() (responseData RtmStartResponseData, err error) {
+	err = client.postForm(baseUrl+endpointRtmStart, url.Values{
+		"token": {client.token},
+	}, &responseData)
+	if err != nil {
+		return responseData, err
+	}
+	return responseData, nil
+}
+
+func (client *Client) GetUserInfo(userId string) (responseData UsersInfoResponseData, err error) {
+	err = client.postForm(baseUrl+endpointUsersInfo, url.Values{
 		"token":   {client.token},
 		"user":    {userId},
 		"as_user": {"true"},
-	})
+	}, &responseData)
 	if err != nil {
-		return resData, fmt.Errorf("users.info request failed: %s", err)
+		return responseData, err
 	}
-	defer res.Body.Close()
-
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		return resData, fmt.Errorf("users.info response was undecodable: %s", err)
-	}
-	return resData, nil
+	return responseData, nil
 }
 
 func (client *Client) PostMessage(channel string, text string) error {
-	_, err := http.PostForm(baseUrl+endpointChatPostMessage, url.Values{
+	return client.postForm(baseUrl+endpointChatPostMessage, url.Values{
 		"token":   {client.token},
 		"channel": {channel},
 		"text":    {text},
 		"as_user": {"true"},
-	})
-	if err != nil {
-		return fmt.Errorf("chat.postMessage request failed to post to channel %s: %s", channel, err)
-	}
-	return nil
+	}, nil)
 }
