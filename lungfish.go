@@ -3,11 +3,13 @@ package lungfish
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/websocket"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/laouji/lungfish/api"
+	"golang.org/x/net/websocket"
 )
 
 type callbackMethod func(*Event)
@@ -31,44 +33,6 @@ type Event struct {
 type Trigger struct {
 	keyword string
 	args    []string
-}
-
-type SlackUserProfile struct {
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	RealName  string `json:"real_name"`
-	Email     string `json:"email"`
-	Image24   string `json:"image_24"`
-}
-
-type SlackUser struct {
-	Id      string           `json:"id"`
-	Name    string           `json:"name"`
-	IsAdmin bool             `json:"is_admin"`
-	IsOwner bool             `json:"is_owner"`
-	Profile SlackUserProfile `json:"profile"`
-}
-
-type UsersListResponseData struct {
-	Ok    bool        `json:"ok"`
-	Error string      `json:"error"`
-	Users []SlackUser `json:"members"`
-}
-
-type UsersInfoResponseData struct {
-	Ok    bool      `json:"ok"`
-	Error string    `json:"error"`
-	User  SlackUser `json:"user"`
-}
-
-type RtmStartResponseData struct {
-	Ok    bool   `json:"ok"`
-	Error string `json:"error"`
-	Url   string `json:"url"`
-	Self  struct {
-		Id   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"self"`
 }
 
 func NewConnection(token string) *Connection {
@@ -114,7 +78,7 @@ func (conn *Connection) Start() (*websocket.Conn, error) {
 	}
 	defer res.Body.Close()
 
-	var resData RtmStartResponseData
+	var resData api.RtmStartResponseData
 	err = json.NewDecoder(res.Body).Decode(&resData)
 	if err != nil {
 		log.Fatal(err)
@@ -191,27 +155,7 @@ func (conn *Connection) PostMessage(text string) {
 	defer res.Body.Close()
 }
 
-func (conn *Connection) GetUsersList() UsersListResponseData {
-	res, err := http.PostForm("https://slack.com/api/users.list", url.Values{
-		"token":   {conn.token},
-		"channel": {conn.channel},
-		"as_user": {"true"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var resData UsersListResponseData
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
-
-	return resData
-}
-
-func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData {
+func (conn *Connection) GetUserInfo(userId string) api.UsersInfoResponseData {
 	res, err := http.PostForm("https://slack.com/api/users.info", url.Values{
 		"token":   {conn.token},
 		"user":    {userId},
@@ -221,7 +165,7 @@ func (conn *Connection) GetUserInfo(userId string) UsersInfoResponseData {
 		log.Fatal(err)
 	}
 
-	var resData UsersInfoResponseData
+	var resData api.UsersInfoResponseData
 
 	err = json.NewDecoder(res.Body).Decode(&resData)
 	if err != nil {
