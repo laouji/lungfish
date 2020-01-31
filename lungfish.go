@@ -1,15 +1,21 @@
 package lungfish
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/laouji/lungfish/api"
 	"github.com/laouji/lungfish/rtm"
 )
 
-// unbuffered for the time being
-var eventsChanBufferSize = 1
+var (
+	// unbuffered for the time being
+	eventsChanBufferSize = 1
+
+	ErrUnsupportedEventType = errors.New("unsupported event type")
+)
 
 type callbackMethod func(*Event)
 
@@ -25,11 +31,11 @@ type Connection struct {
 }
 
 type Event struct {
-	data      map[string]interface{}
-	EventType string
-	rawText   string
-	userId    string
-	trigger   *Trigger
+	rawData map[string]interface{}
+	Type    string
+	rawText string
+	userId  string
+	trigger *Trigger
 }
 
 type Trigger struct {
@@ -45,32 +51,39 @@ func NewConnection(token string) *Connection {
 	}
 }
 
-func createEvent(data map[string]interface{}) *Event {
-	e := &Event{
-		data:      data,
-		EventType: data["type"].(string),
+func parseEvent(rawData map[string]interface{}) (event *Event, err error) {
+	event = &Event{rawData: rawData}
+	if eventType, ok := rawData["type"].(string); ok {
+		event.Type = eventType
 	}
 
-	if userId, ok := data["user"]; ok {
-		e.userId = userId.(string)
+	// TODO: whitelist supported event types
+	if event.Type != "message" {
+		return nil, ErrUnsupportedEventType
 	}
 
-	if e.EventType == "message" {
-		e.rawText = data["text"].(string)
-
-		args := strings.Split(strings.TrimSpace(e.rawText), " ")
-		if len(args) > 1 {
-			e.trigger = createTrigger(args[1], args[2:])
-		}
+	if userId, ok := rawData["user"].(string); ok {
+		event.userId = userId
 	}
 
-	return e
+	if text, ok := rawData["text"].(string); ok {
+		event.rawText = text
+
+		// bot expects space delimited commands
+		args := strings.Split(strings.TrimSpace(text), " ")
+		event.trigger = parseArgs(args)
+	}
+	return event, nil
 }
 
-func createTrigger(keyword string, args []string) *Trigger {
+func parseArgs(args []string) *Trigger {
+	if len(args) < 2 {
+		return &Trigger{}
+	}
+
 	return &Trigger{
-		keyword: keyword,
-		args:    args,
+		keyword: args[1],
+		args:    args[2:],
 	}
 }
 
@@ -93,27 +106,32 @@ func (conn *Connection) Run() error {
 }
 
 func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
-	for data := range eventsChan {
-		if data == nil {
+	for rawEvent := range eventsChan {
+		if rawEvent == nil {
 			continue
 		}
-		e := createEvent(data)
+		event, err := parseEvent(rawEvent)
+		if err != nil {
+			log.Printf("skipping unparseable event %v: %s", rawEvent, err)
+			continue
+		}
 
-		switch data["type"].(string) {
+		switch event.Type {
 		case "message":
-			var isMention = strings.HasPrefix(data["text"].(string), "<@"+conn.userId+">")
+			var isMention = strings.HasPrefix(event.rawText, "<@"+conn.userId+">")
 			if !isMention {
 				// ignore if bot's name not mentioned for now
 				continue
 			}
 
-			if callback, ok := conn.reactions[e.Trigger().Keyword()]; ok {
-				callback(e)
+			if callback, ok := conn.reactions[event.Trigger().Keyword()]; ok {
+				callback(event)
 			}
+			// TODO: at the moment non message events are unexpected
 		case "presence_change":
-			presenceType := data["presence"].(string)
+			presenceType := rawEvent["presence"].(string)
 			if callback, ok := conn.reactions[presenceType]; ok {
-				callback(e)
+				callback(event)
 			}
 		}
 	}
