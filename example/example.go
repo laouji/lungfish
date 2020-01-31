@@ -21,7 +21,11 @@ func main() {
 
 	conn.RegisterChannel(*channel)
 	conn.RegisterReaction("hello", func(e *lungfish.Event) {
-		userInfo := conn.GetUserInfo(e.UserId())
+		userInfo, err := conn.GetUserInfo(e.UserId())
+		if err != nil {
+			log.Fatalf("error fetching user info for user id %s", e.UserId())
+		}
+
 		if !userInfo.Ok {
 			log.Println(e.EventType + ": " + userInfo.Error)
 			conn.PostMessage("error: " + userInfo.Error)

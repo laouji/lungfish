@@ -1,11 +1,7 @@
 package lungfish
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/laouji/lungfish/api"
@@ -15,10 +11,12 @@ import (
 type callbackMethod func(*Event)
 
 type Connection struct {
-	token     string
-	userId    string
-	userName  string
-	channel   string
+	token    string
+	userId   string
+	userName string
+	channel  string
+
+	apiClient *api.Client
 	reactions map[string]callbackMethod
 }
 
@@ -37,7 +35,7 @@ type Trigger struct {
 
 func NewConnection(token string) *Connection {
 	return &Connection{
-		token:     token,
+		apiClient: api.NewClient(token),
 		reactions: map[string]callbackMethod{},
 	}
 }
@@ -71,29 +69,18 @@ func createTrigger(keyword string, args []string) *Trigger {
 	}
 }
 
-func (conn *Connection) Start() (*websocket.Conn, error) {
-	res, err := http.PostForm("https://slack.com/api/rtm.start", url.Values{"token": {conn.token}})
+func (conn *Connection) Run() error {
+	resData, err := conn.apiClient.Start()
 	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
-
-	var resData api.RtmStartResponseData
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to start connection: %s", err)
 	}
 
 	conn.userId = resData.Self.Id
 	conn.userName = resData.Self.Name
 
-	return websocket.Dial(resData.Url, "", "https://slack.com")
-}
-
-func (conn *Connection) Run() error {
-	ws, err := conn.Start()
+	ws, err := websocket.Dial(resData.Url, "", "https://slack.com")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to dial websocket at %s: %s", resData.Url, err)
 	}
 
 	conn.handleEvents(conn.receive(ws))
@@ -106,7 +93,6 @@ func (conn *Connection) receive(ws *websocket.Conn) <-chan map[string]interface{
 		for {
 			var data map[string]interface{}
 			websocket.JSON.Receive(ws, &data)
-			fmt.Printf("%+v\n", data)
 			ch <- data
 		}
 	}()
@@ -142,38 +128,12 @@ func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
 	}
 }
 
-func (conn *Connection) PostMessage(text string) {
-	res, err := http.PostForm("https://slack.com/api/chat.postMessage", url.Values{
-		"token":   {conn.token},
-		"channel": {conn.channel},
-		"text":    {text},
-		"as_user": {"true"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
+func (conn *Connection) PostMessage(text string) error {
+	return conn.apiClient.PostMessage(conn.channel, text)
 }
 
-func (conn *Connection) GetUserInfo(userId string) api.UsersInfoResponseData {
-	res, err := http.PostForm("https://slack.com/api/users.info", url.Values{
-		"token":   {conn.token},
-		"user":    {userId},
-		"as_user": {"true"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var resData api.UsersInfoResponseData
-
-	err = json.NewDecoder(res.Body).Decode(&resData)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer res.Body.Close()
-
-	return resData
+func (conn *Connection) GetUserInfo(userId string) (resData api.UsersInfoResponseData, err error) {
+	return conn.apiClient.GetUserInfo(userId)
 }
 
 func (conn *Connection) RegisterChannel(channel string) {
