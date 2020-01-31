@@ -5,18 +5,22 @@ import (
 	"strings"
 
 	"github.com/laouji/lungfish/api"
-	"golang.org/x/net/websocket"
+	"github.com/laouji/lungfish/rtm"
 )
+
+// unbuffered for the time being
+var eventsChanBufferSize = 1
 
 type callbackMethod func(*Event)
 
 type Connection struct {
-	token    string
-	userId   string
-	userName string
-	channel  string
+	token        string
+	userId       string
+	userName     string
+	slackChannel string
 
 	apiClient *api.Client
+	rtmClient *rtm.Client
 	reactions map[string]callbackMethod
 }
 
@@ -36,6 +40,7 @@ type Trigger struct {
 func NewConnection(token string) *Connection {
 	return &Connection{
 		apiClient: api.NewClient(token),
+		rtmClient: rtm.NewClient(eventsChanBufferSize),
 		reactions: map[string]callbackMethod{},
 	}
 }
@@ -78,31 +83,17 @@ func (conn *Connection) Run() error {
 	conn.userId = resData.Self.Id
 	conn.userName = resData.Self.Name
 
-	ws, err := websocket.Dial(resData.Url, "", "https://slack.com")
+	eventsChan, err := conn.rtmClient.Start(resData.Url)
 	if err != nil {
-		return fmt.Errorf("failed to dial websocket at %s: %s", resData.Url, err)
+		return fmt.Errorf("failed to start rtm connection on %s: %s", resData.Url, err)
 	}
 
-	conn.handleEvents(conn.receive(ws))
+	conn.handleEvents(eventsChan)
 	return nil
 }
 
-func (conn *Connection) receive(ws *websocket.Conn) <-chan map[string]interface{} {
-	ch := make(chan map[string]interface{})
-	go func() {
-		for {
-			var data map[string]interface{}
-			websocket.JSON.Receive(ws, &data)
-			ch <- data
-		}
-	}()
-
-	return ch
-}
-
-func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
-	for {
-		data := <-ch
+func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
+	for data := range eventsChan {
 		if data == nil {
 			continue
 		}
@@ -129,15 +120,15 @@ func (conn *Connection) handleEvents(ch <-chan map[string]interface{}) {
 }
 
 func (conn *Connection) PostMessage(text string) error {
-	return conn.apiClient.PostMessage(conn.channel, text)
+	return conn.apiClient.PostMessage(conn.slackChannel, text)
 }
 
 func (conn *Connection) GetUserInfo(userId string) (resData api.UsersInfoResponseData, err error) {
 	return conn.apiClient.GetUserInfo(userId)
 }
 
-func (conn *Connection) RegisterChannel(channel string) {
-	conn.channel = channel
+func (conn *Connection) RegisterChannel(slackChannel string) {
+	conn.slackChannel = slackChannel
 }
 
 func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {

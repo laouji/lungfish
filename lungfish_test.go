@@ -2,14 +2,6 @@ package lungfish
 
 import "testing"
 
-func TestNewConnection(t *testing.T) {
-	conn := NewConnection("dummytoken")
-
-	if conn.token != "dummytoken" {
-		t.Fatalf("expected: dummytoken, got: %s", conn.token)
-	}
-}
-
 func TestCreateEvent(t *testing.T) {
 	data := map[string]interface{}{
 		"type": "message",
@@ -37,8 +29,8 @@ func TestCreateEvent(t *testing.T) {
 func TestRegisterChannel(t *testing.T) {
 	conn := NewConnection("dummytoken")
 	conn.RegisterChannel("#general")
-	if conn.channel != "#general" {
-		t.Fatalf("expected: #general, got: %s", conn.channel)
+	if conn.slackChannel != "#general" {
+		t.Fatalf("expected: #general, got: %s", conn.slackChannel)
 	}
 }
 
