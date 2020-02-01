@@ -31,11 +31,13 @@ type Connection struct {
 }
 
 type Event struct {
-	rawData map[string]interface{}
-	Type    string
-	rawText string
-	userId  string
-	trigger *Trigger
+	Type   string
+	UserId string // user who initiated the event
+
+	rawData   map[string]interface{}
+	rawText   string
+	isMention bool // if the bot was mentioned or not
+	trigger   *Trigger
 }
 
 type Trigger struct {
@@ -51,7 +53,7 @@ func NewConnection(token string) *Connection {
 	}
 }
 
-func parseEvent(rawData map[string]interface{}) (event *Event, err error) {
+func (conn *Connection) parseEvent(rawData map[string]interface{}) (event *Event, err error) {
 	event = &Event{rawData: rawData}
 	if eventType, ok := rawData["type"].(string); ok {
 		event.Type = eventType
@@ -63,7 +65,7 @@ func parseEvent(rawData map[string]interface{}) (event *Event, err error) {
 	}
 
 	if userId, ok := rawData["user"].(string); ok {
-		event.userId = userId
+		event.UserId = userId
 	}
 
 	if text, ok := rawData["text"].(string); ok {
@@ -71,17 +73,25 @@ func parseEvent(rawData map[string]interface{}) (event *Event, err error) {
 
 		// bot expects space delimited commands
 		args := strings.Split(strings.TrimSpace(text), " ")
-		event.trigger = parseArgs(args)
+		event.isMention, event.trigger = conn.parseArgs(args)
 	}
 	return event, nil
 }
 
-func parseArgs(args []string) *Trigger {
-	if len(args) < 2 {
-		return &Trigger{}
+func (conn *Connection) parseArgs(args []string) (isMention bool, trigger *Trigger) {
+	if len(args) < 1 {
+		return false, &Trigger{}
 	}
 
-	return &Trigger{
+	// first argument is expected to be the bot's name
+	isMention = strings.HasPrefix(args[0], "<@"+conn.userId+">")
+
+	// TODO: trigger a help message if bot is called incorrectly
+	if len(args) < 2 {
+		return isMention, &Trigger{}
+	}
+
+	return isMention, &Trigger{
 		keyword: args[1],
 		args:    args[2:],
 	}
@@ -110,7 +120,7 @@ func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 		if rawEvent == nil {
 			continue
 		}
-		event, err := parseEvent(rawEvent)
+		event, err := conn.parseEvent(rawEvent)
 		if err != nil {
 			log.Printf("skipping unparseable event %v: %s", rawEvent, err)
 			continue
@@ -118,8 +128,7 @@ func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 
 		switch event.Type {
 		case "message":
-			var isMention = strings.HasPrefix(event.rawText, "<@"+conn.userId+">")
-			if !isMention {
+			if !event.isMention {
 				// ignore if bot's name not mentioned for now
 				continue
 			}
@@ -163,10 +172,6 @@ func (e *Event) Text() string {
 
 func (e *Event) Trigger() *Trigger {
 	return e.trigger
-}
-
-func (e *Event) UserId() string {
-	return e.userId
 }
 
 func (t *Trigger) Keyword() string {

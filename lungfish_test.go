@@ -3,12 +3,14 @@ package lungfish
 import "testing"
 
 func TestCreateEvent_Success(t *testing.T) {
+	conn := NewConnection("dummytoken")
+	conn.userId = "someUserId"
 	data := map[string]interface{}{
 		"type": "message",
 		"user": "aaaaaa",
-		"text": "@botname: command_name arg1 arg2",
+		"text": "<@someUserId>: command_name arg1 arg2",
 	}
-	e, err := parseEvent(data)
+	e, err := conn.parseEvent(data)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %s", err)
 	}
@@ -21,6 +23,14 @@ func TestCreateEvent_Success(t *testing.T) {
 		t.Fatalf("expected: %s, got: %s", data["type"], e.Type)
 	}
 
+	if e.UserId != data["user"] {
+		t.Fatalf("expected: %s, got: %s", data["user"], e.UserId)
+	}
+
+	if !e.isMention {
+		t.Fatalf("expected: true, got: %t", e.isMention)
+	}
+
 	if e.trigger.keyword != "command_name" {
 		t.Fatalf("expected: %s, got: %s", "command_name", e.trigger.keyword)
 	}
@@ -31,21 +41,23 @@ func TestCreateEvent_Success(t *testing.T) {
 }
 
 func TestCreateEvent_Unsupported(t *testing.T) {
+	conn := NewConnection("dummytoken")
 	data := map[string]interface{}{
 		"type": "something_unsupported",
 	}
-	_, err := parseEvent(data)
+	_, err := conn.parseEvent(data)
 	if err != ErrUnsupportedEventType {
 		t.Fatalf("expected %s error, got: %s", ErrUnsupportedEventType, err)
 	}
 }
 
 func TestCreateEvent_NotEnoughArgs(t *testing.T) {
+	conn := NewConnection("dummytoken")
 	data := map[string]interface{}{
 		"type": "message",
 		"text": "@botname",
 	}
-	e, err := parseEvent(data)
+	e, err := conn.parseEvent(data)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %s", err)
 	}
