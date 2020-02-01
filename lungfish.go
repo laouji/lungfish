@@ -40,9 +40,23 @@ type Event struct {
 	trigger   *Trigger
 }
 
+// Text returns the raw text string sent to the bot
+func (e *Event) Text() string {
+	return e.rawText
+}
+
+func (e *Event) Trigger() *Trigger {
+	return e.trigger
+}
+
+// Trigger is a struct containing the keyword that triggered a reaction and any following arguments
 type Trigger struct {
 	keyword string
 	args    []string
+}
+
+func (t *Trigger) Keyword() string {
+	return t.keyword
 }
 
 func NewConnection(token string) *Connection {
@@ -51,6 +65,52 @@ func NewConnection(token string) *Connection {
 		rtmClient: rtm.NewClient(eventsChanBufferSize),
 		reactions: map[string]callbackMethod{},
 	}
+}
+
+// RegisterChannel sets the slack channel that bot wishes to connect to
+func (conn *Connection) RegisterChannel(slackChannel string) {
+	conn.slackChannel = slackChannel
+}
+
+// RegisterReaction sets a callback method that can be triggered by commands sent to the bot
+func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
+	conn.reactions[triggerWord] = callback
+}
+
+// Run is a blocking method that triggers the bot to open a connectionw with the RTM endpoint
+// and listen in on events happening in the channel.
+// This method should be called after all the bot's reaction callback methods have been set up.
+func (conn *Connection) Run() error {
+	resData, err := conn.apiClient.Start()
+	if err != nil {
+		return fmt.Errorf("failed to start connection: %s", err)
+	}
+
+	conn.userId = resData.Self.Id
+	conn.userName = resData.Self.Name
+
+	eventsChan, err := conn.rtmClient.Start(resData.Url)
+	if err != nil {
+		return fmt.Errorf("failed to start rtm connection on %s: %s", resData.Url, err)
+	}
+
+	conn.handleEvents(eventsChan)
+	return nil
+}
+
+// PostMessage posts a message to the channel as the bot user
+func (conn *Connection) PostMessage(text string) error {
+	return conn.apiClient.PostMessage(conn.slackChannel, text)
+}
+
+// GetUserInfo fetches user profile information of a slack user given a user id
+func (conn *Connection) GetUserInfo(userId string) (resData api.UsersInfoResponseData, err error) {
+	return conn.apiClient.GetUserInfo(userId)
+}
+
+// OwnUserId is a helper function that returns the bot's own user id
+func (conn *Connection) OwnUserId() string {
+	return conn.userId
 }
 
 func (conn *Connection) parseEvent(rawData map[string]interface{}) (event *Event, err error) {
@@ -97,24 +157,6 @@ func (conn *Connection) parseArgs(args []string) (isMention bool, trigger *Trigg
 	}
 }
 
-func (conn *Connection) Run() error {
-	resData, err := conn.apiClient.Start()
-	if err != nil {
-		return fmt.Errorf("failed to start connection: %s", err)
-	}
-
-	conn.userId = resData.Self.Id
-	conn.userName = resData.Self.Name
-
-	eventsChan, err := conn.rtmClient.Start(resData.Url)
-	if err != nil {
-		return fmt.Errorf("failed to start rtm connection on %s: %s", resData.Url, err)
-	}
-
-	conn.handleEvents(eventsChan)
-	return nil
-}
-
 func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 	for rawEvent := range eventsChan {
 		if rawEvent == nil {
@@ -144,36 +186,4 @@ func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 			}
 		}
 	}
-}
-
-func (conn *Connection) PostMessage(text string) error {
-	return conn.apiClient.PostMessage(conn.slackChannel, text)
-}
-
-func (conn *Connection) GetUserInfo(userId string) (resData api.UsersInfoResponseData, err error) {
-	return conn.apiClient.GetUserInfo(userId)
-}
-
-func (conn *Connection) RegisterChannel(slackChannel string) {
-	conn.slackChannel = slackChannel
-}
-
-func (conn *Connection) RegisterReaction(triggerWord string, callback callbackMethod) {
-	conn.reactions[triggerWord] = callback
-}
-
-func (conn *Connection) OwnUserId() string {
-	return conn.userId
-}
-
-func (e *Event) Text() string {
-	return e.rawText
-}
-
-func (e *Event) Trigger() *Trigger {
-	return e.trigger
-}
-
-func (t *Trigger) Keyword() string {
-	return t.keyword
 }
