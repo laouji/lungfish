@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 
 	"github.com/laouji/lungfish"
@@ -21,16 +22,18 @@ func main() {
 
 	conn.RegisterChannel(*channel)
 	conn.RegisterReaction("hello", func(e *lungfish.Event) {
-		userInfo, err := conn.GetUserInfo(e.UserId())
+		userInfo, err := conn.GetUserInfo(e.UserId)
 		if err != nil {
-			log.Fatalf("error fetching user info for user id %s", e.UserId())
+			log.Fatalf("error fetching user info for user id %s", e.UserId)
 		}
 
 		if !userInfo.Ok {
-			log.Println(e.EventType + ": " + userInfo.Error)
-			conn.PostMessage("error: " + userInfo.Error)
+			log.Fatalf("failed to get user info %s", userInfo.Error)
 		} else {
-			conn.PostMessage("o hai @" + userInfo.User.Name)
+			message := fmt.Sprintf("o hai <@%s> (%s)", userInfo.User.Id, userInfo.User.Profile.RealName)
+			if err = conn.PostMessage(message); err != nil {
+				log.Fatalf("failed to post message %s", err)
+			}
 		}
 	})
 

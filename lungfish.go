@@ -11,16 +11,19 @@ import (
 )
 
 var (
+	ErrUnsupportedEventType = errors.New("unsupported event type")
+
 	// unbuffered for the time being
 	eventsChanBufferSize = 1
-
-	ErrUnsupportedEventType = errors.New("unsupported event type")
+	supportedEventTypes  = map[string]struct{}{
+		"message": struct{}{},
+		"hello":   struct{}{},
+	}
 )
 
 type callbackMethod func(*Event)
 
 type Connection struct {
-	token        string
 	userId       string
 	userName     string
 	slackChannel string
@@ -119,8 +122,7 @@ func (conn *Connection) parseEvent(rawData map[string]interface{}) (event *Event
 		event.Type = eventType
 	}
 
-	// TODO: whitelist supported event types
-	if event.Type != "message" {
+	if _, ok := supportedEventTypes[event.Type]; !ok {
 		return nil, ErrUnsupportedEventType
 	}
 
@@ -163,12 +165,15 @@ func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 			continue
 		}
 		event, err := conn.parseEvent(rawEvent)
-		if err != nil {
+		if err == ErrUnsupportedEventType {
+			continue
+		} else if err != nil {
 			log.Printf("skipping unparseable event %v: %s", rawEvent, err)
 			continue
 		}
 
 		switch event.Type {
+		case "hello": // event type for channel join; do nothing
 		case "message":
 			if !event.isMention {
 				// ignore if bot's name not mentioned for now
@@ -176,12 +181,6 @@ func (conn *Connection) handleEvents(eventsChan <-chan map[string]interface{}) {
 			}
 
 			if callback, ok := conn.reactions[event.Trigger().Keyword()]; ok {
-				callback(event)
-			}
-			// TODO: at the moment non message events are unexpected
-		case "presence_change":
-			presenceType := rawEvent["presence"].(string)
-			if callback, ok := conn.reactions[presenceType]; ok {
 				callback(event)
 			}
 		}
