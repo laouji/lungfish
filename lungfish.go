@@ -61,7 +61,7 @@ func (t *Trigger) Keyword() string {
 
 func NewConnection(token string) *Connection {
 	return &Connection{
-		apiClient: api.NewClient(token),
+		apiClient: api.NewClient(api.BaseUrl, token),
 		rtmClient: rtm.NewClient(eventsChanBufferSize),
 		reactions: map[string]callbackMethod{},
 	}

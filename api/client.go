@@ -8,12 +8,14 @@ import (
 )
 
 type Client struct {
-	token string
+	baseUrl string
+	token   string
 }
 
-func NewClient(token string) *Client {
+func NewClient(baseUrl, token string) *Client {
 	return &Client{
-		token: token,
+		baseUrl: baseUrl,
+		token:   token,
 	}
 }
 
@@ -22,7 +24,7 @@ func (client *Client) postForm(
 	payload url.Values,
 	responseData interface{},
 ) error {
-	res, err := http.PostForm(endpoint, payload)
+	res, err := http.PostForm(client.baseUrl+apiPathBase+endpoint, payload)
 	if err != nil {
 		return fmt.Errorf("request to %s endpoint with payload %s failed: %s", endpoint, payload, err)
 	}
@@ -45,7 +47,7 @@ func (client *Client) postForm(
 }
 
 func (client *Client) Start() (responseData RtmStartResponseData, err error) {
-	err = client.postForm(baseUrl+endpointRtmStart, url.Values{
+	err = client.postForm(endpointRtmStart, url.Values{
 		"token": {client.token},
 	}, &responseData)
 	if err != nil {
@@ -55,7 +57,7 @@ func (client *Client) Start() (responseData RtmStartResponseData, err error) {
 }
 
 func (client *Client) GetUserInfo(userId string) (responseData UsersInfoResponseData, err error) {
-	err = client.postForm(baseUrl+endpointUsersInfo, url.Values{
+	err = client.postForm(endpointUsersInfo, url.Values{
 		"token":   {client.token},
 		"user":    {userId},
 		"as_user": {"true"},
@@ -67,7 +69,7 @@ func (client *Client) GetUserInfo(userId string) (responseData UsersInfoResponse
 }
 
 func (client *Client) PostMessage(channel string, text string) error {
-	return client.postForm(baseUrl+endpointChatPostMessage, url.Values{
+	return client.postForm(endpointChatPostMessage, url.Values{
 		"token":   {client.token},
 		"channel": {channel},
 		"text":    {text},
