@@ -2,27 +2,33 @@ package lungfish
 
 import "testing"
 
-func TestNewConnection(t *testing.T) {
+func TestCreateEvent_Success(t *testing.T) {
 	conn := NewConnection("dummytoken")
-
-	if conn.token != "dummytoken" {
-		t.Fatalf("expected: dummytoken, got: %s", conn.token)
-	}
-}
-
-func TestCreateEvent(t *testing.T) {
+	conn.userId = "someUserId"
 	data := map[string]interface{}{
 		"type": "message",
 		"user": "aaaaaa",
-		"text": "@botname: command_name arg1 arg2",
+		"text": "<@someUserId>: command_name arg1 arg2",
 	}
-	e := createEvent(data)
+	e, err := conn.parseEvent(data)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %s", err)
+	}
+
 	if e.rawText != data["text"] {
 		t.Fatalf("expected: %s, got: %s", data["text"], e.rawText)
 	}
 
-	if e.EventType != data["type"] {
-		t.Fatalf("expected: %s, got: %s", data["type"], e.EventType)
+	if e.Type != data["type"] {
+		t.Fatalf("expected: %s, got: %s", data["type"], e.Type)
+	}
+
+	if e.UserId != data["user"] {
+		t.Fatalf("expected: %s, got: %s", data["user"], e.UserId)
+	}
+
+	if !e.isMention {
+		t.Fatalf("expected: true, got: %t", e.isMention)
 	}
 
 	if e.trigger.keyword != "command_name" {
@@ -34,11 +40,39 @@ func TestCreateEvent(t *testing.T) {
 	}
 }
 
+func TestCreateEvent_Unsupported(t *testing.T) {
+	conn := NewConnection("dummytoken")
+	data := map[string]interface{}{
+		"type": "something_unsupported",
+	}
+	_, err := conn.parseEvent(data)
+	if err != ErrUnsupportedEventType {
+		t.Fatalf("expected %s error, got: %s", ErrUnsupportedEventType, err)
+	}
+}
+
+func TestCreateEvent_NotEnoughArgs(t *testing.T) {
+	conn := NewConnection("dummytoken")
+	data := map[string]interface{}{
+		"type": "message",
+		"text": "@botname",
+	}
+	e, err := conn.parseEvent(data)
+	if err != nil {
+		t.Fatalf("expected nil error, got: %s", err)
+	}
+
+	// trigger should at least not be a nil pointer
+	if len(e.trigger.args) != 0 {
+		t.Fatalf("expected slice with: %d elements, got: %d", 0, len(e.trigger.args))
+	}
+}
+
 func TestRegisterChannel(t *testing.T) {
 	conn := NewConnection("dummytoken")
 	conn.RegisterChannel("#general")
-	if conn.channel != "#general" {
-		t.Fatalf("expected: #general, got: %s", conn.channel)
+	if conn.slackChannel != "#general" {
+		t.Fatalf("expected: #general, got: %s", conn.slackChannel)
 	}
 }
 

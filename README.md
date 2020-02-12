@@ -64,22 +64,13 @@ conn.PostMessage("hello world")
 Get information about the user from a user ID via https://api.slack.com/methods/users.info
 
 ```go
-userInfo := conn.GetUserInfo(e.UserId())
+userInfo := conn.GetUserInfo(e.UserId)
 
 if !userInfo.Ok {
     log.Println("error: " + userInfo.Error)
 } else {
-    log.Println("user name is @" + userInfo.User.Name)
+    log.Println("user name is " + userInfo.User.Name)
 }
-```
-
-#### func (conn *Connection) GetUsersList() UsersListResponseData
-
-Get information about all users in the registered channel via https://api.slack.com/methods/users.list
-
-```go
-conn.RegisterChannel("#channel-name")
-usersList := conn.GetUsersList()
 ```
 
 ## INSTALLATION
